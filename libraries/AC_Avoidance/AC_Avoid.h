@@ -3,11 +3,7 @@
 #include <AP_Common/AP_Common.h>
 #include <AP_Param/AP_Param.h>
 #include <AP_Math/AP_Math.h>
-#include <AP_AHRS/AP_AHRS.h>     // AHRS library
 #include <AC_AttitudeControl/AC_AttitudeControl.h> // Attitude controller library for sqrt controller
-#include <AC_Fence/AC_Fence.h>         // Failsafe fence library
-#include <AP_Proximity/AP_Proximity.h>
-#include <AP_Beacon/AP_Beacon.h>
 
 #define AC_AVOID_ACCEL_CMSS_MAX         100.0f  // maximum acceleration/deceleration in cm/s/s used to avoid hitting fence
 
@@ -28,11 +24,16 @@
  */
 class AC_Avoid {
 public:
-    AC_Avoid(const AP_AHRS& ahrs, const AC_Fence& fence, const AP_Proximity& proximity, const AP_Beacon* beacon = nullptr);
+    AC_Avoid();
 
     /* Do not allow copies */
     AC_Avoid(const AC_Avoid &other) = delete;
     AC_Avoid &operator=(const AC_Avoid&) = delete;
+
+    // get singleton instance
+    static AC_Avoid *get_singleton() {
+        return _singleton;
+    }
 
     /*
      * Adjusts the desired velocity so that the vehicle can stop
@@ -126,12 +127,6 @@ private:
     // returns the maximum positive and negative roll and pitch percentages (in -1 ~ +1 range) based on the proximity sensor
     void get_proximity_roll_pitch_pct(float &roll_positive, float &roll_negative, float &pitch_positive, float &pitch_negative);
 
-    // external references
-    const AP_AHRS& _ahrs;
-    const AC_Fence& _fence;
-    const AP_Proximity& _proximity;
-    const AP_Beacon* _beacon;
-
     // parameters
     AP_Int8 _enabled;
     AP_Int16 _angle_max;        // maximum lean angle to avoid obstacles (only used in non-GPS flight modes)
@@ -140,4 +135,10 @@ private:
     AP_Int8 _behavior;          // avoidance behaviour (slide or stop)
 
     bool _proximity_enabled = true; // true if proximity sensor based avoidance is enabled (used to allow pilot to enable/disable)
+
+    static AC_Avoid *_singleton;
+};
+
+namespace AP {
+    AC_Avoid *ac_avoid();
 };

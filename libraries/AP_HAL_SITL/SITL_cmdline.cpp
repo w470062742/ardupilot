@@ -6,10 +6,8 @@
 #include "AP_HAL_SITL_Namespace.h"
 #include "HAL_SITL_Class.h"
 #include "UARTDriver.h"
-#include <stdio.h>
-#include <signal.h>
-#include <unistd.h>
 #include <AP_HAL/utility/getopt_cpp.h>
+#include <AP_Logger/AP_Logger_SITL.h>
 
 #include <SITL/SIM_Multicopter.h>
 #include <SITL/SIM_Helicopter.h>
@@ -18,6 +16,7 @@
 #include <SITL/SIM_QuadPlane.h>
 #include <SITL/SIM_Rover.h>
 #include <SITL/SIM_BalanceBot.h>
+#include <SITL/SIM_Sailboat.h>
 #include <SITL/SIM_CRRCSim.h>
 #include <SITL/SIM_Gazebo.h>
 #include <SITL/SIM_last_letter.h>
@@ -28,6 +27,12 @@
 #include <SITL/SIM_Calibration.h>
 #include <SITL/SIM_XPlane.h>
 #include <SITL/SIM_Submarine.h>
+#include <SITL/SIM_SilentWings.h>
+#include <SITL/SIM_Morse.h>
+#include <SITL/SIM_AirSim.h>
+
+#include <signal.h>
+#include <stdio.h>
 
 extern const AP_HAL::HAL& hal;
 
@@ -38,6 +43,15 @@ using namespace SITL;
 static void _sig_fpe(int signum)
 {
     fprintf(stderr, "ERROR: Floating point exception - aborting\n");
+    AP_HAL::dump_stack_trace();
+    abort();
+}
+
+// catch segfault
+static void _sig_segv(int signum)
+{
+    fprintf(stderr, "ERROR: segmentation fault - aborting\n");
+    AP_HAL::dump_stack_trace();
     abort();
 }
 
@@ -45,7 +59,7 @@ void SITL_State::_usage(void)
 {
     printf("Options:\n"
            "\t--help|-h                display this help information\n"
-           "\t--wipe|-w                wipe eeprom and dataflash\n"
+           "\t--wipe|-w                wipe eeprom\n"
            "\t--unhide-groups|-u       parameter enumeration ignores AP_PARAM_FLAG_ENABLE\n"
            "\t--speedup|-s SPEEDUP     set simulation speedup\n"
            "\t--rate|-r RATE           set SITL framerate\n"
@@ -67,6 +81,7 @@ void SITL_State::_usage(void)
            "\t--uartE device           set device string for UARTE\n"
            "\t--uartF device           set device string for UARTF\n"
            "\t--uartG device           set device string for UARTG\n"
+           "\t--uartH device           set device string for UARTH\n"
            "\t--rtscts                 enable rtscts on serial ports (default false)\n"
            "\t--base-port PORT         set port num for base port(default 5670) must be before -I option\n"
            "\t--rc-in-port PORT        set port num for rc in\n"
@@ -88,6 +103,9 @@ static const struct {
     { "quad",               MultiCopter::create },
     { "copter",             MultiCopter::create },
     { "x",                  MultiCopter::create },
+    { "bfx",                MultiCopter::create },
+    { "djix",               MultiCopter::create },
+    { "cwx",                MultiCopter::create },
     { "hexa",               MultiCopter::create },
     { "octa",               MultiCopter::create },
     { "dodeca-hexa",        MultiCopter::create },
@@ -100,6 +118,7 @@ static const struct {
     { "coaxcopter",         SingleCopter::create },
     { "rover",              SimRover::create },
     { "balancebot",         BalanceBot::create },
+    { "sailboat",           Sailboat::create },
     { "crrcsim",            CRRCSim::create },
     { "jsbsim",             JSBSim::create },
     { "flightaxis",         FlightAxis::create },
@@ -110,21 +129,28 @@ static const struct {
     { "plane",              Plane::create },
     { "calibration",        Calibration::create },
     { "vectored",           Submarine::create },
+    { "silentwings",        SilentWings::create },
+    { "morse",              Morse::create },
+    { "airsim",             AirSim::create},
 };
 
 void SITL_State::_set_signal_handlers(void) const
 {
     struct sigaction sa_fpe = {};
-
     sigemptyset(&sa_fpe.sa_mask);
     sa_fpe.sa_handler = _sig_fpe;
     sigaction(SIGFPE, &sa_fpe, nullptr);
 
     struct sigaction sa_pipe = {};
-
     sigemptyset(&sa_pipe.sa_mask);
     sa_pipe.sa_handler = SIG_IGN; /* No-op SIGPIPE handler */
     sigaction(SIGPIPE, &sa_pipe, nullptr);
+
+    struct sigaction sa_segv = {};
+    sigemptyset(&sa_segv.sa_mask);
+    sa_segv.sa_handler = _sig_segv;
+    sigaction(SIGSEGV, &sa_segv, nullptr);
+
 }
 
 void SITL_State::_parse_command_line(int argc, char * const argv[])
@@ -167,10 +193,11 @@ void SITL_State::_parse_command_line(int argc, char * const argv[])
         CMDLINE_UARTE,
         CMDLINE_UARTF,
         CMDLINE_UARTG,
+        CMDLINE_UARTH,
         CMDLINE_RTSCTS,
         CMDLINE_BASE_PORT,
         CMDLINE_RCIN_PORT,
-        CMDLINE_SIM_ADDRESS = 15,
+        CMDLINE_SIM_ADDRESS,
         CMDLINE_SIM_PORT_IN,
         CMDLINE_SIM_PORT_OUT,
         CMDLINE_IRLOCK_PORT,
@@ -200,6 +227,7 @@ void SITL_State::_parse_command_line(int argc, char * const argv[])
         {"uartE",           true,   0, CMDLINE_UARTE},
         {"uartF",           true,   0, CMDLINE_UARTF},
         {"uartG",           true,   0, CMDLINE_UARTG},
+        {"uartH",           true,   0, CMDLINE_UARTH},
         {"rtscts",          false,  0, CMDLINE_RTSCTS},
         {"base-port",       true,   0, CMDLINE_BASE_PORT},
         {"rc-in-port",      true,   0, CMDLINE_RCIN_PORT},
@@ -225,13 +253,16 @@ void SITL_State::_parse_command_line(int argc, char * const argv[])
         switch (opt) {
         case 'w':
             AP_Param::erase_all();
-            unlink("dataflash.bin");
+            unlink(AP_Logger_SITL::filename);
             break;
         case 'u':
             AP_Param::set_hide_disabled_groups(false);
             break;
         case 's':
             speedup = strtof(gopt.optarg, nullptr);
+            char speedup_string[18];
+            snprintf(speedup_string, sizeof(speedup_string), "SIM_SPEEDUP=%s", gopt.optarg);
+            _set_param_default(speedup_string);
             break;
         case 'r':
             _framerate = (unsigned)atoi(gopt.optarg);
@@ -295,6 +326,7 @@ void SITL_State::_parse_command_line(int argc, char * const argv[])
         case CMDLINE_UARTE:
         case CMDLINE_UARTF:
         case CMDLINE_UARTG:
+        case CMDLINE_UARTH:
             _uart_path[opt - CMDLINE_UARTA] = gopt.optarg;
             break;
         case CMDLINE_RTSCTS:

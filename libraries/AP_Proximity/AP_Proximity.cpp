@@ -17,9 +17,12 @@
 #include "AP_Proximity_LightWareSF40C.h"
 #include "AP_Proximity_RPLidarA2.h"
 #include "AP_Proximity_TeraRangerTower.h"
+#include "AP_Proximity_TeraRangerTowerEvo.h"
 #include "AP_Proximity_RangeFinder.h"
 #include "AP_Proximity_MAV.h"
 #include "AP_Proximity_SITL.h"
+#include "AP_Proximity_MorseSITL.h"
+#include <AP_AHRS/AP_AHRS.h>
 
 extern const AP_HAL::HAL &hal;
 
@@ -30,7 +33,7 @@ const AP_Param::GroupInfo AP_Proximity::var_info[] = {
     // @Param: _TYPE
     // @DisplayName: Proximity type
     // @Description: What type of proximity sensor is connected
-    // @Values: 0:None,1:LightWareSF40C,2:MAVLink,3:TeraRangerTower,4:RangeFinder,5:RPLidarA2
+    // @Values: 0:None,1:LightWareSF40C,2:MAVLink,3:TeraRangerTower,4:RangeFinder,5:RPLidarA2,6:TeraRangerTowerEvo,10:SITL,11:MorseSITL
     // @RebootRequired: True
     // @User: Standard
     AP_GROUPINFO("_TYPE",   1, AP_Proximity, _type[0], 0),
@@ -48,7 +51,7 @@ const AP_Param::GroupInfo AP_Proximity::var_info[] = {
     // @Units: deg
     // @Range: -180 180
     // @User: Standard
-    AP_GROUPINFO("_YAW_CORR", 3, AP_Proximity, _yaw_correction[0], PROXIMITY_YAW_CORRECTION_DEFAULT),
+    AP_GROUPINFO("_YAW_CORR", 3, AP_Proximity, _yaw_correction[0], 0),
 
     // @Param: _IGN_ANG1
     // @DisplayName: Proximity sensor ignore angle 1
@@ -150,7 +153,7 @@ const AP_Param::GroupInfo AP_Proximity::var_info[] = {
     // @Param: 2_TYPE
     // @DisplayName: Second Proximity type
     // @Description: What type of proximity sensor is connected
-    // @Values: 0:None,1:LightWareSF40C,2:MAVLink,3:TeraRangerTower,4:RangeFinder,5:RPLidarA2
+    // @Values: 0:None,1:LightWareSF40C,2:MAVLink,3:TeraRangerTower,4:RangeFinder,5:RPLidarA2,6:TeraRangerTowerEvo
     // @User: Advanced
     // @RebootRequired: True
     AP_GROUPINFO("2_TYPE", 16, AP_Proximity, _type[1], 0),
@@ -168,7 +171,7 @@ const AP_Param::GroupInfo AP_Proximity::var_info[] = {
     // @Units: deg
     // @Range: -180 180
     // @User: Standard
-    AP_GROUPINFO("2_YAW_CORR", 18, AP_Proximity, _yaw_correction[1], PROXIMITY_YAW_CORRECTION_DEFAULT),
+    AP_GROUPINFO("2_YAW_CORR", 18, AP_Proximity, _yaw_correction[1], 0),
 #endif
 
     AP_GROUPEND
@@ -266,7 +269,7 @@ AP_Proximity::Proximity_Status AP_Proximity::get_status() const
 }
 
 // handle mavlink DISTANCE_SENSOR messages
-void AP_Proximity::handle_msg(mavlink_message_t *msg)
+void AP_Proximity::handle_msg(const mavlink_message_t &msg)
 {
     for (uint8_t i=0; i<num_instances; i++) {
         if ((drivers[i] != nullptr) && (_type[i] != Proximity_Type_None)) {
@@ -305,6 +308,13 @@ void AP_Proximity::detect_instance(uint8_t instance)
             return;
         }
     }
+    if (type == Proximity_Type_TRTOWEREVO) {
+        if (AP_Proximity_TeraRangerTowerEvo::detect(serial_manager)) {
+            state[instance].instance = instance;
+            drivers[instance] = new AP_Proximity_TeraRangerTowerEvo(*this, state[instance], serial_manager);
+            return;
+        }
+    }
     if (type == Proximity_Type_RangeFinder) {
         state[instance].instance = instance;
         drivers[instance] = new AP_Proximity_RangeFinder(*this, state[instance]);
@@ -314,6 +324,11 @@ void AP_Proximity::detect_instance(uint8_t instance)
     if (type == Proximity_Type_SITL) {
         state[instance].instance = instance;
         drivers[instance] = new AP_Proximity_SITL(*this, state[instance]);
+        return;
+    }
+    if (type == Proximity_Type_MorseSITL) {
+        state[instance].instance = instance;
+        drivers[instance] = new AP_Proximity_MorseSITL(*this, state[instance]);
         return;
     }
 #endif
@@ -362,6 +377,26 @@ const Vector2f* AP_Proximity::get_boundary_points(uint8_t instance, uint16_t& nu
 const Vector2f* AP_Proximity::get_boundary_points(uint16_t& num_points) const
 {
     return get_boundary_points(primary_instance, num_points);
+}
+
+// copy location points around vehicle into a buffer owned by the caller
+// caller should provide the buff_size which is the maximum number of locations the buffer can hold (normally PROXIMITY_MAX_DIRECTION)
+// num_copied is updated with the number of locations copied into the buffer
+// returns true on success, false on failure (should only happen if there is a semaphore conflict)
+bool AP_Proximity::copy_locations(uint8_t instance, Proximity_Location* buff, uint16_t buff_size, uint16_t& num_copied)
+{
+    if ((drivers[instance] == nullptr) || (_type[instance] == Proximity_Type_None)) {
+        num_copied = 0;
+        return false;
+    }
+
+    // call backend copy_locations
+    return drivers[instance]->copy_locations(buff, buff_size, num_copied);
+}
+
+bool AP_Proximity::copy_locations(Proximity_Location* buff, uint16_t buff_size, uint16_t& num_copied)
+{
+    return copy_locations(primary_instance, buff, buff_size, num_copied);
 }
 
 // get distance and angle to closest object (used for pre-arm check)
@@ -451,3 +486,12 @@ bool AP_Proximity::sensor_failed() const
 }
 
 AP_Proximity *AP_Proximity::_singleton;
+
+namespace AP {
+
+AP_Proximity *proximity()
+{
+    return AP_Proximity::get_singleton();
+}
+
+}

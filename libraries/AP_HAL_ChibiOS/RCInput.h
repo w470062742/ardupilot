@@ -49,7 +49,9 @@ public:
     int16_t get_rssi(void) override {
         return _rssi;
     }
-        
+
+    const char *protocol() const override { return last_protocol; }
+
     void _timer_tick(void);
     bool rc_bind(int dsmMode) override;
 
@@ -62,6 +64,8 @@ private:
     int16_t _rssi = -1;
     uint32_t _rcin_timestamp_last_signal;
     bool _init;
+    const char *last_protocol;
+
 #if HAL_RCINPUT_WITH_AP_RADIO
     bool _radio_init;
     AP_Radio *radio;

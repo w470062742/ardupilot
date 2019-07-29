@@ -23,8 +23,6 @@
 #include <AP_Common/AP_Common.h>
 #include <AP_Param/AP_Param.h>
 #include <AP_Mission/AP_Mission.h>
-#include <AP_Baro/AP_Baro.h>
-#include <AP_GPS/AP_GPS.h>
 #include <AP_RCMapper/AP_RCMapper.h>
 #include <inttypes.h>
 
@@ -51,11 +49,8 @@ public:
     };
 
     // Constructor
-    AP_AdvancedFailsafe(AP_Mission &_mission, const AP_GPS &_gps) :
-        mission(_mission),
-        gps(_gps),
-        _gps_loss_count(0),
-        _comms_loss_count(0)
+    AP_AdvancedFailsafe(AP_Mission &_mission) :
+        mission(_mission)
         {
             AP_Param::setup_object_defaults(this, var_info);
             
@@ -64,6 +59,8 @@ public:
             
             _saved_wp = 0;
         }
+
+    bool enabled() { return _enable; }
 
     // check that everything is OK
     void check(uint32_t last_heartbeat_ms, bool geofence_breached, uint32_t last_valid_rc_ms);
@@ -83,7 +80,11 @@ public:
 
     // for holding parameters
     static const struct AP_Param::GroupInfo var_info[];
-        
+
+    bool terminating_vehicle_via_landing() const {
+        return _terminate_action == TERMINATE_ACTION_LAND;
+    };
+
 protected:
     // setup failsafe values for if FMU firmware stops running
     virtual void setup_IO_failsafe(void) = 0;
@@ -94,7 +95,6 @@ protected:
     enum state _state;
 
     AP_Mission &mission;
-    const AP_GPS &gps;
 
     AP_Int8 _enable;
     // digital output pins for communicating with the failsafe board

@@ -1,4 +1,5 @@
 #include "AP_Mount_Alexmos.h"
+#include <AP_GPS/AP_GPS.h>
 
 extern const AP_HAL::HAL& hal;
 
@@ -73,8 +74,8 @@ void AP_Mount_Alexmos::set_mode(enum MAV_MOUNT_MODE mode)
     _state._mode = mode;
 }
 
-// status_msg - called to allow mounts to send their status to GCS using the MOUNT_STATUS message
-void AP_Mount_Alexmos::status_msg(mavlink_channel_t chan)
+// send_mount_status - called to allow mounts to send their status to GCS using the MOUNT_STATUS message
+void AP_Mount_Alexmos::send_mount_status(mavlink_channel_t chan)
 {
     if (!_initialised) {
         return;

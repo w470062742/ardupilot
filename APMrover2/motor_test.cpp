@@ -71,7 +71,7 @@ bool Rover::mavlink_motor_test_check(mavlink_channel_t chan, bool check_rc, uint
     }
 
     // check rc has been calibrated
-    if (check_rc && !arming.pre_arm_rc_checks(true)) {
+    if (check_rc && !arming.rc_calibration_checks(true)) {
         gcs_chan.send_text(MAV_SEVERITY_CRITICAL, "Motor Test: RC not calibrated");
         return false;
     }
@@ -126,7 +126,7 @@ MAV_RESULT Rover::mavlink_motor_test_start(mavlink_channel_t chan, uint8_t motor
 
             // arm motors
             if (!arming.is_armed()) {
-                arm_motors(AP_Arming::ArmingMethod::MOTORTEST);
+                arming.arm(AP_Arming::Method::MOTORTEST);
             }
 
             // disable failsafes
@@ -161,7 +161,7 @@ void Rover::motor_test_stop()
     }
 
     // disarm motors
-    disarm_motors();
+    AP::arming().disarm();
 
     // reset timeout
     motor_test_start_ms = 0;

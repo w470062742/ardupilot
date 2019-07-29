@@ -229,8 +229,8 @@ void AP_Motors6DOF::output_to_motors()
     int8_t i;
     int16_t motor_out[AP_MOTORS_MAX_NUM_MOTORS];    // final pwm values sent to the motor
 
-    switch (_spool_mode) {
-    case SHUT_DOWN:
+    switch (_spool_state) {
+    case SpoolState::SHUT_DOWN:
         // sends minimum values out to the motors
         // set motor output based on thrust requests
         for (i=0; i<AP_MOTORS_MAX_NUM_MOTORS; i++) {
@@ -239,7 +239,7 @@ void AP_Motors6DOF::output_to_motors()
             }
         }
         break;
-    case SPIN_WHEN_ARMED:
+    case SpoolState::GROUND_IDLE:
         // sends output to motors when armed but not flying
         for (i=0; i<AP_MOTORS_MAX_NUM_MOTORS; i++) {
             if (motor_enabled[i]) {
@@ -247,9 +247,9 @@ void AP_Motors6DOF::output_to_motors()
             }
         }
         break;
-    case SPOOL_UP:
-    case THROTTLE_UNLIMITED:
-    case SPOOL_DOWN:
+    case SpoolState::SPOOLING_UP:
+    case SpoolState::THROTTLE_UNLIMITED:
+    case SpoolState::SPOOLING_DOWN:
         // set motor output based on thrust requests
         for (i=0; i<AP_MOTORS_MAX_NUM_MOTORS; i++) {
             if (motor_enabled[i]) {
@@ -291,9 +291,9 @@ void AP_Motors6DOF::output_armed_stabilizing()
         float   forward_thrust;             // forward thrust input value, +/- 1.0
         float   lateral_thrust;             // lateral thrust input value, +/- 1.0
 
-        roll_thrust = _roll_in;
-        pitch_thrust = _pitch_in;
-        yaw_thrust = _yaw_in;
+        roll_thrust = (_roll_in + _roll_in_ff);
+        pitch_thrust = (_pitch_in + _pitch_in_ff);
+        yaw_thrust = (_yaw_in + _yaw_in_ff);
         throttle_thrust = get_throttle_bidirectional();
         forward_thrust = _forward_in;
         lateral_thrust = _lateral_in;
@@ -348,11 +348,10 @@ void AP_Motors6DOF::output_armed_stabilizing()
     const AP_BattMonitor &battery = AP::battery();
 
 	// Current limiting
-    if (_batt_current_max <= 0.0f || !battery.has_current()) {
+    float _batt_current;
+    if (_batt_current_max <= 0.0f || !battery.current_amps(_batt_current)) {
         return;
     }
-
-    float _batt_current = battery.current_amps();
 
     float _batt_current_delta = _batt_current - _batt_current_last;
 
@@ -397,9 +396,9 @@ void AP_Motors6DOF::output_armed_stabilizing_vectored()
     float   forward_thrust;             // forward thrust input value, +/- 1.0
     float   lateral_thrust;             // lateral thrust input value, +/- 1.0
 
-    roll_thrust = _roll_in;
-    pitch_thrust = _pitch_in;
-    yaw_thrust = _yaw_in;
+    roll_thrust = (_roll_in + _roll_in_ff);
+    pitch_thrust = (_pitch_in + _pitch_in_ff);
+    yaw_thrust = (_yaw_in + _yaw_in_ff);
     throttle_thrust = get_throttle_bidirectional();
     forward_thrust = _forward_in;
     lateral_thrust = _lateral_in;
@@ -481,9 +480,9 @@ void AP_Motors6DOF::output_armed_stabilizing_vectored_6dof()
     float   forward_thrust;             // forward thrust input value, +/- 1.0
     float   lateral_thrust;             // lateral thrust input value, +/- 1.0
 
-    roll_thrust = _roll_in;
-    pitch_thrust = _pitch_in;
-    yaw_thrust = _yaw_in;
+    roll_thrust = (_roll_in + _roll_in_ff);
+    pitch_thrust = (_pitch_in + _pitch_in_ff);
+    yaw_thrust = (_yaw_in + _yaw_in_ff);
     throttle_thrust = get_throttle_bidirectional();
     forward_thrust = _forward_in;
     lateral_thrust = _lateral_in;

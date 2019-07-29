@@ -26,10 +26,11 @@ extern const AP_HAL::HAL& hal;
    already know that we should setup the rangefinder
 */
 AP_RangeFinder_LightWareSerial::AP_RangeFinder_LightWareSerial(RangeFinder::RangeFinder_State &_state,
-                                                               AP_SerialManager &serial_manager,
+                                                               AP_RangeFinder_Params &_params,
                                                                uint8_t serial_instance) :
-    AP_RangeFinder_Backend(_state)
+    AP_RangeFinder_Backend(_state, _params)
 {
+    const AP_SerialManager &serial_manager = AP::serialmanager();
     uart = serial_manager.find_serial(AP_SerialManager::SerialProtocol_Rangefinder, serial_instance);
     if (uart != nullptr) {
         uart->begin(serial_manager.find_baudrate(AP_SerialManager::SerialProtocol_Rangefinder, serial_instance));
@@ -41,9 +42,9 @@ AP_RangeFinder_LightWareSerial::AP_RangeFinder_LightWareSerial(RangeFinder::Rang
    trying to take a reading on Serial. If we get a result the sensor is
    there.
 */
-bool AP_RangeFinder_LightWareSerial::detect(AP_SerialManager &serial_manager, uint8_t serial_instance)
+bool AP_RangeFinder_LightWareSerial::detect(uint8_t serial_instance)
 {
-    return serial_manager.find_serial(AP_SerialManager::SerialProtocol_Rangefinder, serial_instance) != nullptr;
+    return AP::serialmanager().find_serial(AP_SerialManager::SerialProtocol_Rangefinder, serial_instance) != nullptr;
 }
 
 // read - return last value measured by sensor
@@ -73,8 +74,18 @@ bool AP_RangeFinder_LightWareSerial::get_reading(uint16_t &reading_cm)
         }
     }
 
-    // we need to write a byte to prompt another reading
-    uart->write('d');
+    uint32_t now = AP_HAL::millis();
+    if (last_init_ms == 0 ||
+        (now - last_init_ms > 1000 &&
+         now - state.last_reading_ms > 1000)) {
+        // send enough serial transitions to trigger LW20 into serial
+        // mode. It starts in dual I2C/serial mode, and wants to see
+        // enough transitions to switch into serial mode.
+        uart->write("www\r\n");
+        last_init_ms = now;
+    } else {
+        uart->write('d');
+    }
 
     if (count == 0) {
         return false;
@@ -90,9 +101,9 @@ void AP_RangeFinder_LightWareSerial::update(void)
 {
     if (get_reading(state.distance_cm)) {
         // update range_valid state based on distance measured
-        last_reading_ms = AP_HAL::millis();
+        state.last_reading_ms = AP_HAL::millis();
         update_status();
-    } else if (AP_HAL::millis() - last_reading_ms > 200) {
+    } else if (AP_HAL::millis() - state.last_reading_ms > 200) {
         set_status(RangeFinder::RangeFinder_NoData);
     }
 }
